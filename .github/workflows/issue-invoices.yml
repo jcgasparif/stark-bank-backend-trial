@@ -1,0 +1,21 @@
+name: Issue invoice batch
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+permissions:
+  id-token: write
+env:
+  AWS_REGION: us-east-2
+  FUNCTION_NAME: stark-bank-backend-trial
+jobs:
+  issue:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+      - run: aws lambda invoke --function-name "$FUNCTION_NAME" --invocation-type RequestResponse --payload '{"action":"issue_batch"}' /tmp/response.json
+      - run: cat /tmp/response.json
+

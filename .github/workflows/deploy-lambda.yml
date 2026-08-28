@@ -1,0 +1,36 @@
+name: Deploy Lambda to AWS
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+permissions:
+  contents: read
+  id-token: write
+env:
+  AWS_REGION: us-east-2
+  STACK_NAME: stark-bank-backend-trial
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+      - uses: aws-actions/setup-sam@v2
+      - name: Deploy stack
+        env:
+          STARK_PROJECT_ID: ${{ secrets.STARK_PROJECT_ID }}
+          STARK_PRIVATE_KEY: ${{ secrets.STARK_PRIVATE_KEY }}
+        run: sam deploy --stack-name "$STACK_NAME" --region "$AWS_REGION" --resolve-s3 --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides StarkProjectId="$STARK_PROJECT_ID" StarkPrivateKey="$STARK_PRIVATE_KEY"
+

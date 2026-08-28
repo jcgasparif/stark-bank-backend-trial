@@ -1,0 +1,38 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Stark Bank trial serverless stack
+Parameters:
+  StarkProjectId: {Type: String, NoEcho: true}
+  StarkPrivateKey: {Type: String, NoEcho: true}
+Resources:
+  TrialTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: stark-bank-backend-trial
+      BillingMode: PROVISIONED
+      ProvisionedThroughput: {ReadCapacityUnits: 1, WriteCapacityUnits: 1}
+      AttributeDefinitions: [{AttributeName: pk, AttributeType: S}]
+      KeySchema: [{AttributeName: pk, KeyType: HASH}]
+  TrialFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: stark-bank-backend-trial
+      Runtime: python3.12
+      Handler: starkbank_trial.lambda_handler.lambda_handler
+      CodeUri: .
+      MemorySize: 256
+      Timeout: 30
+      Environment:
+        Variables:
+          STARK_ENVIRONMENT: sandbox
+          STARK_PROJECT_ID: !Ref StarkProjectId
+          STARK_PRIVATE_KEY: !Ref StarkPrivateKey
+          DYNAMODB_TABLE: !Ref TrialTable
+      Policies:
+        - DynamoDBCrudPolicy: {TableName: !Ref TrialTable}
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors: {AllowOrigins: ["*"], AllowMethods: ["POST"]}
+Outputs:
+  FunctionUrl:
+    Value: !GetAtt TrialFunctionUrl.FunctionUrl
