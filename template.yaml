@@ -3,7 +3,7 @@ Transform: AWS::Serverless-2016-10-31
 Description: Stark Bank trial serverless stack with SQS retry and DLQ
 Parameters:
   StarkProjectId: {Type: String, NoEcho: true}
-  StarkPrivateKey: {Type: String, NoEcho: true}
+  StarkPrivateKeyBase64: {Type: String, NoEcho: true}
 Resources:
   InvoiceDlq:
     Type: AWS::SQS::Queue
@@ -39,7 +39,7 @@ Resources:
         Variables:
           STARK_ENVIRONMENT: sandbox
           STARK_PROJECT_ID: !Ref StarkProjectId
-          STARK_PRIVATE_KEY: !Ref StarkPrivateKey
+          STARK_PRIVATE_KEY_B64: !Ref StarkPrivateKeyBase64
           DYNAMODB_TABLE: !Ref TrialTable
           INVOICE_QUEUE_URL: !Ref InvoiceQueue
       Policies:
@@ -61,7 +61,7 @@ Resources:
         Variables:
           STARK_ENVIRONMENT: sandbox
           STARK_PROJECT_ID: !Ref StarkProjectId
-          STARK_PRIVATE_KEY: !Ref StarkPrivateKey
+          STARK_PRIVATE_KEY_B64: !Ref StarkPrivateKeyBase64
           DYNAMODB_TABLE: !Ref TrialTable
       Policies:
         - DynamoDBCrudPolicy: {TableName: !Ref TrialTable}

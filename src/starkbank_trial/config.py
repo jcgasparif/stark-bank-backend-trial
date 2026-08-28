@@ -1,11 +1,15 @@
 from dataclasses import dataclass
 import os
+import base64
 from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
 
 def _load_private_key() -> str:
+    encoded = os.getenv("STARK_PRIVATE_KEY_B64", "").strip()
+    if encoded:
+        return base64.b64decode(encoded).decode("utf-8").lstrip("﻿").strip()
     value = os.getenv("STARK_PRIVATE_KEY", "")
     value = value.lstrip("\ufeff").strip()
     return value.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")

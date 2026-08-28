@@ -34,5 +34,6 @@ jobs:
           STARK_PRIVATE_KEY: ${{ secrets.STARK_PRIVATE_KEY }}
         run: |
           sam build --use-container
-          sam deploy --template-file .aws-sam/build/template.yaml --stack-name "$STACK_NAME" --region "$AWS_REGION" --resolve-s3 --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides StarkProjectId="$STARK_PROJECT_ID" StarkPrivateKey="$STARK_PRIVATE_KEY"
+          STARK_PRIVATE_KEY_B64="$(printf '%s' "$STARK_PRIVATE_KEY" | base64 -w 0)"
+          sam deploy --template-file .aws-sam/build/template.yaml --stack-name "$STACK_NAME" --region "$AWS_REGION" --resolve-s3 --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides StarkProjectId="$STARK_PROJECT_ID" StarkPrivateKeyBase64="$STARK_PRIVATE_KEY_B64"
 
