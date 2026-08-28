@@ -32,7 +32,7 @@ Resources:
       FunctionName: stark-bank-webhook
       Runtime: python3.12
       Handler: starkbank_trial.lambda_handler.lambda_http_handler
-      CodeUri: .
+      CodeUri: src
       MemorySize: 256
       Timeout: 30
       Environment:
@@ -54,7 +54,7 @@ Resources:
       FunctionName: stark-bank-worker
       Runtime: python3.12
       Handler: starkbank_trial.lambda_handler.lambda_worker_handler
-      CodeUri: .
+      CodeUri: src
       MemorySize: 256
       Timeout: 30
       Environment:

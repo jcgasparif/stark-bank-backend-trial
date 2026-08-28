@@ -1,0 +1,4 @@
+Flask>=3,<4
+python-dotenv>=1,<2
+starkbank>=2,<3
+boto3>=1.34,<2
