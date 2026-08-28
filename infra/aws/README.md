@@ -1,9 +1,24 @@
 # AWS serverless deployment
 
-Arquitetura: uma Lambda, uma Function URL pública, uma tabela DynamoDB provisionada com 1 leitura/escrita e IAM OIDC para GitHub Actions, na região us-east-2.
+Arquitetura em us-east-2:
 
-Secrets do GitHub: AWS_DEPLOY_ROLE_ARN, STARK_PROJECT_ID e STARK_PRIVATE_KEY.
+Stark Bank -> Function URL -> Webhook Lambda -> SQS -> Worker Lambda -> Transfer
+                                             \-> DLQ após 5 tentativas
+                                                DynamoDB para idempotência
 
-O deploy usa SAM. A Function URL gerada no output FunctionUrl deve ser registrada no Stark Bank com subscription invoice. O workflow issue-invoices invoca a Lambda a cada 3 horas; o DynamoDB limita a oito lotes por janela.
+Recursos criados pelo template SAM:
+- Webhook Lambda com Function URL pública;
+- Worker Lambda acionado pela SQS;
+- SQS principal com VisibilityTimeout de 180 segundos;
+- DLQ com retenção de 14 dias e máximo de 5 recebimentos;
+- DynamoDB provisionado com 1 RCU e 1 WCU;
+- IAM policies gerenciadas pelo SAM.
 
-A arquitetura busca permanecer no free tier, mas a AWS pode cobrar conforme elegibilidade da conta e outros recursos. Remova a stack após o desafio.
+O workflow deploy-lambda executa testes e deploya a stack. O workflow issue-invoices invoca o Worker Lambda a cada 3 horas; o DynamoDB limita a janela a 8 lotes.
+
+GitHub secrets:
+- AWS_DEPLOY_ROLE_ARN
+- STARK_PROJECT_ID
+- STARK_PRIVATE_KEY
+
+Use o output FunctionUrl como endpoint de webhook no Stark Bank. Monitore a DLQ antes de considerar a execução concluída. A arquitetura busca ficar no free tier, mas isso depende da elegibilidade da conta e dos demais recursos. Apague a stack depois do desafio.

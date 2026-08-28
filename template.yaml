@@ -1,10 +1,23 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Stark Bank trial serverless stack
+Description: Stark Bank trial serverless stack with SQS retry and DLQ
 Parameters:
   StarkProjectId: {Type: String, NoEcho: true}
   StarkPrivateKey: {Type: String, NoEcho: true}
 Resources:
+  InvoiceDlq:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: stark-bank-invoice-dlq
+      MessageRetentionPeriod: 1209600
+  InvoiceQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: stark-bank-invoice-queue
+      VisibilityTimeout: 180
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt InvoiceDlq.Arn
+        maxReceiveCount: 5
   TrialTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -13,12 +26,34 @@ Resources:
       ProvisionedThroughput: {ReadCapacityUnits: 1, WriteCapacityUnits: 1}
       AttributeDefinitions: [{AttributeName: pk, AttributeType: S}]
       KeySchema: [{AttributeName: pk, KeyType: HASH}]
-  TrialFunction:
+  WebhookFunction:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: stark-bank-backend-trial
+      FunctionName: stark-bank-webhook
       Runtime: python3.12
-      Handler: starkbank_trial.lambda_handler.lambda_handler
+      Handler: starkbank_trial.lambda_handler.lambda_http_handler
+      CodeUri: .
+      MemorySize: 256
+      Timeout: 30
+      Environment:
+        Variables:
+          STARK_ENVIRONMENT: sandbox
+          STARK_PROJECT_ID: !Ref StarkProjectId
+          STARK_PRIVATE_KEY: !Ref StarkPrivateKey
+          DYNAMODB_TABLE: !Ref TrialTable
+          INVOICE_QUEUE_URL: !Ref InvoiceQueue
+      Policies:
+        - DynamoDBCrudPolicy: {TableName: !Ref TrialTable}
+        - SQSSendMessagePolicy: {QueueName: !GetAtt InvoiceQueue.QueueName}
+      FunctionUrlConfig:
+        AuthType: NONE
+        Cors: {AllowOrigins: ["*"], AllowMethods: ["POST"]}
+  WorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: stark-bank-worker
+      Runtime: python3.12
+      Handler: starkbank_trial.lambda_handler.lambda_worker_handler
       CodeUri: .
       MemorySize: 256
       Timeout: 30
@@ -30,9 +65,17 @@ Resources:
           DYNAMODB_TABLE: !Ref TrialTable
       Policies:
         - DynamoDBCrudPolicy: {TableName: !Ref TrialTable}
-      FunctionUrlConfig:
-        AuthType: NONE
-        Cors: {AllowOrigins: ["*"], AllowMethods: ["POST"]}
+      Events:
+        InvoiceQueueEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt InvoiceQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes: [ReportBatchItemFailures]
 Outputs:
   FunctionUrl:
-    Value: !GetAtt TrialFunctionUrl.FunctionUrl
+    Value: !GetAtt WebhookFunctionUrl.FunctionUrl
+  QueueUrl:
+    Value: !Ref InvoiceQueue
+  DeadLetterQueueUrl:
+    Value: !Ref InvoiceDlq
