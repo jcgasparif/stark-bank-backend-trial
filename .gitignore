@@ -5,3 +5,6 @@ __pycache__/
 .pytest_cache/
 data/*.sqlite3
 src/*egg-info/
+
+keys/
+*.pem
