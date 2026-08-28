@@ -32,5 +32,7 @@ jobs:
         env:
           STARK_PROJECT_ID: ${{ secrets.STARK_PROJECT_ID }}
           STARK_PRIVATE_KEY: ${{ secrets.STARK_PRIVATE_KEY }}
-        run: |`r`n          sam build --use-container`r`n          sam deploy --stack-name "$STACK_NAME" --region "$AWS_REGION" --resolve-s3 --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides StarkProjectId="$STARK_PROJECT_ID" StarkPrivateKey="$STARK_PRIVATE_KEY"
+        run: |
+          sam build --use-container
+          sam deploy --stack-name "$STACK_NAME" --region "$AWS_REGION" --resolve-s3 --capabilities CAPABILITY_IAM --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides StarkProjectId="$STARK_PROJECT_ID" StarkPrivateKey="$STARK_PRIVATE_KEY"
 
