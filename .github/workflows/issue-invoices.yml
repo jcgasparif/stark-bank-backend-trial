@@ -16,7 +16,7 @@ jobs:
         with:
           aws-region: ${{ env.AWS_REGION }}
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-      - run: aws lambda invoke --function-name "$FUNCTION_NAME" --invocation-type RequestResponse --payload '{"action":"issue_batch"}' /tmp/response.json
+      - run: aws lambda invoke --function-name "$FUNCTION_NAME" --invocation-type RequestResponse --cli-binary-format raw-in-base64-out --payload '{"action":"issue_batch"}' /tmp/response.json
       - run: cat /tmp/response.json
 
 
