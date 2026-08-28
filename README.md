@@ -16,3 +16,6 @@ Webhook: POST /webhooks/starkbank. Health: GET /health.
 
     python -m starkbank_trial.setup_webhook --url https://SEU-ENDPOINT/webhooks/starkbank
     pytest
+
+## Deploy AWS
+Pipeline ECS Fargate em us-east-2: .github/workflows/deploy-aws.yml. Configuração: infra/aws/README.md.
