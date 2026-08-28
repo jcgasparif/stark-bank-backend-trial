@@ -8,7 +8,7 @@ load_dotenv()
 def _load_private_key() -> str:
     value = os.getenv("STARK_PRIVATE_KEY", "")
     value = value.lstrip("\ufeff").strip()
-    return value.replace("\r\n", "\n").replace("\n", "\n").replace("\r", "\n")
+    return value.replace("\\r\\n", "\n").replace("\\n", "\n").replace("\\r", "\n")
 
 @dataclass(frozen=True)
 class Settings:
