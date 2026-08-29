@@ -2,14 +2,17 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 import starkbank
+import pytest
 
-from starkbank_trial.client import StarkClient, _random_cpf
+from starkbank_trial.client import StarkClient, _random_cpf, _with_retry
 
 
 def _client():
     client = object.__new__(StarkClient)
     client.settings = SimpleNamespace(invoice_min_amount=1000, invoice_max_amount=5000)
     client.store = Mock()
+    client.store.claim_invoice_creation.return_value = {"claimed": True, "status": "processing", "lease_token": "lease-1"}
+    client.store.mark_retryable.return_value = None
     return client
 def test_random_cpf_has_valid_check_digits():
     cpf = _random_cpf()
@@ -25,22 +28,24 @@ def test_random_cpf_has_valid_check_digits():
 def test_issue_batch_passes_a_list_to_starkbank(monkeypatch):
     client = _client()
     created = SimpleNamespace(id="invoice-1")
+    monkeypatch.setattr(starkbank.invoice, "query", lambda **_: [])
 
     def create(invoices):
-        assert isinstance(invoices, list)
+        assert isinstance(invoices, list) and len(invoices) == 1
         assert len(invoices) == 1
         assert isinstance(invoices[0], starkbank.Invoice)
         return [created]
 
     monkeypatch.setattr(starkbank.invoice, "create", create)
 
-    assert client.issue_batch(minimum=1, maximum=1) == [created]
+    assert client.issue_batch(minimum=1, maximum=1, idempotency_key="same-run") == [created]
     client.store.save_invoice.assert_called_once()
+    client.store.complete_invoice_creation.assert_called_once_with("same-run:0", "invoice-1", "lease-1")
 
 
 def test_transfer_passes_a_list_to_starkbank(monkeypatch):
     client = _client()
-    client.store.claim.return_value = True
+    client.store.claim.return_value = {"claimed": True, "status": "processing", "lease_token": "lease-1"}
     created = SimpleNamespace(id="transfer-1")
 
     monkeypatch.setattr(starkbank.invoice, "payment", lambda _: {"amount": 1250, "fee": 25})
@@ -54,4 +59,33 @@ def test_transfer_passes_a_list_to_starkbank(monkeypatch):
     monkeypatch.setattr(starkbank.transfer, "create", create)
 
     assert client.transfer_paid_invoice("invoice-1", None) == 1225
-    client.store.complete.assert_called_once_with("invoice-1", 1225, "transfer-1")
+    client.store.complete.assert_called_once_with("invoice-1", 1225, "transfer-1", "lease-1")
+
+
+def test_issue_batch_reuses_completed_invoice_request(monkeypatch):
+    client = _client()
+    client.store.claim_invoice_creation.return_value = {
+        "claimed": False,
+        "status": "completed",
+        "invoice_id": "invoice-existing",
+    }
+    monkeypatch.setattr(starkbank.invoice, "create", lambda *_: pytest.fail("must not create"))
+
+    result = client.issue_batch(minimum=1, maximum=1, idempotency_key="same-run")
+
+    assert result[0].id == "invoice-existing"
+
+
+def test_with_retry_uses_exponential_backoff(monkeypatch):
+    attempts = iter([RuntimeError("temporary"), RuntimeError("temporary"), "ok"])
+    delays = []
+    monkeypatch.setattr("starkbank_trial.client.time.sleep", delays.append)
+
+    def operation():
+        result = next(attempts)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    assert _with_retry(operation, attempts=3, base_delay=0.25) == "ok"
+    assert delays == [0.25, 0.5]
