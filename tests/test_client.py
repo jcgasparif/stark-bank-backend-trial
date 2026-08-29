@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 import starkbank
 
-from starkbank_trial.client import StarkClient
+from starkbank_trial.client import StarkClient, _random_cpf
 
 
 def _client():
@@ -11,6 +11,15 @@ def _client():
     client.settings = SimpleNamespace(invoice_min_amount=1000, invoice_max_amount=5000)
     client.store = Mock()
     return client
+def test_random_cpf_has_valid_check_digits():
+    cpf = _random_cpf()
+    assert len(cpf) == 11
+    assert len(set(cpf)) > 1
+    for position in (9, 10):
+        total = sum(int(digit) * (position + 1 - index) for index, digit in enumerate(cpf[:position]))
+        assert int(cpf[position]) == (total * 10) % 11 % 10
+
+
 
 
 def test_issue_batch_passes_a_list_to_starkbank(monkeypatch):
