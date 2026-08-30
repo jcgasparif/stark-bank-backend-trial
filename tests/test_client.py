@@ -35,7 +35,7 @@ def test_random_cpf_has_valid_check_digits():
 def test_issue_batch_passes_a_list_to_starkbank(monkeypatch):
     client = _client()
     created = SimpleNamespace(id="invoice-1")
-    monkeypatch.setattr(starkbank.invoice, "query", lambda **_: [])
+    monkeypatch.setattr(starkbank.invoice, "query", lambda **_: iter(()))
 
     def create(invoices):
         assert isinstance(invoices, list) and len(invoices) == 1
@@ -51,6 +51,27 @@ def test_issue_batch_passes_a_list_to_starkbank(monkeypatch):
     client.store.save_invoice.assert_called_once()
     client.store.complete_invoice_creation.assert_called_once_with(
         "same-run:0", "invoice-1", "lease-1"
+    )
+
+
+def test_issue_batch_recovers_invoice_from_query_generator(monkeypatch):
+    client = _client()
+    existing = SimpleNamespace(id="invoice-existing")
+    monkeypatch.setattr(
+        starkbank.invoice, "query", lambda **_: (invoice for invoice in [existing])
+    )
+    monkeypatch.setattr(
+        starkbank.invoice,
+        "create",
+        lambda *_: pytest.fail("must not create when query finds an invoice"),
+    )
+
+    result = client.issue_batch(minimum=1, maximum=1, idempotency_key="same-run")
+
+    assert result == [existing]
+    client.store.save_invoice.assert_called_once()
+    client.store.complete_invoice_creation.assert_called_once_with(
+        "same-run:0", "invoice-existing", "lease-1"
     )
 
 

@@ -83,7 +83,10 @@ class StarkClient:
                     request_key=request_key,
                     tag=tag,
                 )
-                existing = starkbank.invoice.query(tags=[tag], limit=1)
+                # The Stark Bank SDK returns a generator from ``query``.
+                # Materialize it once so the result can be checked and indexed
+                # consistently with the list returned by ``create``.
+                existing = list(starkbank.invoice.query(tags=[tag], limit=1))
                 if existing:
                     _log(
                         "invoice_found_at_starkbank",
