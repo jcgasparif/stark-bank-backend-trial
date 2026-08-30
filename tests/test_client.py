@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import starkbank
 import pytest
 
-from starkbank_trial.client import StarkClient, _random_cpf, _with_retry
+from starkbank_trial.client import StarkClient, _cpf_for_name, _random_cpf, _with_retry
 
 
 def _client():
@@ -30,6 +30,20 @@ def test_random_cpf_has_valid_check_digits():
             for index, digit in enumerate(cpf[:position])
         )
         assert int(cpf[position]) == (total * 10) % 11 % 10
+
+
+def test_cpf_is_stable_for_the_same_customer_name():
+    first = _cpf_for_name("Ana Silva")
+    second = _cpf_for_name("Ana Silva")
+
+    assert first == second
+    assert len(first) == 11
+    for position in (9, 10):
+        total = sum(
+            int(digit) * (position + 1 - index)
+            for index, digit in enumerate(first[:position])
+        )
+        assert int(first[position]) == (total * 10) % 11 % 10
 
 
 def test_issue_batch_passes_a_list_to_starkbank(monkeypatch):
@@ -75,6 +89,23 @@ def test_issue_batch_recovers_invoice_from_query_generator(monkeypatch):
     )
 
 
+def test_issue_batch_uses_distinct_customer_names(monkeypatch):
+    client = _client()
+    invoices_created = []
+    monkeypatch.setattr(starkbank.invoice, "query", lambda **_: iter(()))
+
+    def create(invoices):
+        invoices_created.extend(invoices)
+        return [SimpleNamespace(id=f"invoice-{len(invoices_created)}")]
+
+    monkeypatch.setattr(starkbank.invoice, "create", create)
+
+    client.issue_batch(minimum=12, maximum=12, idempotency_key="distinct-names")
+
+    names = [invoice.name for invoice in invoices_created]
+    assert len(names) == len(set(names)) == 12
+
+
 def test_transfer_passes_a_list_to_starkbank(monkeypatch):
     client = _client()
     client.store.claim.return_value = {
@@ -92,6 +123,7 @@ def test_transfer_passes_a_list_to_starkbank(monkeypatch):
         assert isinstance(transfers, list)
         assert len(transfers) == 1
         assert isinstance(transfers[0], starkbank.Transfer)
+        assert transfers[0].external_id == "starkbank-trial-invoice-1"
         return [created]
 
     monkeypatch.setattr(starkbank.transfer, "create", create)

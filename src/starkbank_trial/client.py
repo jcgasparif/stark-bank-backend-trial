@@ -13,6 +13,21 @@ from .domain import DESTINATION, receipt_from
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+CUSTOMER_NAMES = (
+    "Ana Silva",
+    "Bruno Costa",
+    "Carla Souza",
+    "Diego Oliveira",
+    "Eduardo Martins",
+    "Fernanda Almeida",
+    "Gabriel Santos",
+    "Helena Rodrigues",
+    "Igor Carvalho",
+    "Juliana Ferreira",
+    "Lucas Gomes",
+    "Mariana Ribeiro",
+)
+
 
 def _log(event, **details):
     logger.info(json.dumps({"event": event, **details}, default=str, sort_keys=True))
@@ -28,6 +43,22 @@ def _random_cpf():
             for digit, current_weight in zip(digits, range(weight, 1, -1))
         )
         digits.append((check * 10) % 11 % 10)
+    return "".join(map(str, digits))
+
+
+def _cpf_for_name(name):
+    """Return a stable, valid CPF for the given sandbox customer name."""
+    digits = [value % 10 for value in hashlib.sha256(name.encode()).digest()[:9]]
+    if len(set(digits)) == 1:
+        digits[0] = (digits[0] + 1) % 10
+
+    for weight in (10, 11):
+        check = sum(
+            digit * current_weight
+            for digit, current_weight in zip(digits, range(weight, 1, -1))
+        )
+        digits.append((check * 10) % 11 % 10)
+
     return "".join(map(str, digits))
 
 
@@ -59,6 +90,7 @@ class StarkClient:
         size = minimum + int(hashlib.sha256(batch_key.encode()).hexdigest()[:8], 16) % (
             maximum - minimum + 1
         )
+        name_offset = int(hashlib.sha256(batch_key.encode()).hexdigest()[8:16], 16)
         _log("invoice_batch_started", idempotency_key=batch_key, size=size)
         for index in range(size):
             request_key = f"{batch_key}:{index}"
@@ -76,6 +108,7 @@ class StarkClient:
             if not state["claimed"]:
                 raise RuntimeError("invoice creation lease is active")
             tag = f"starkbank-trial:{request_key}"
+            customer_name = CUSTOMER_NAMES[(name_offset + index) % len(CUSTOMER_NAMES)]
 
             def create_or_recover():
                 _log(
@@ -100,15 +133,8 @@ class StarkClient:
                                 self.settings.invoice_min_amount,
                                 self.settings.invoice_max_amount,
                             ),
-                            name=random.choice(
-                                [
-                                    "Ana Silva",
-                                    "Bruno Costa",
-                                    "Carla Souza",
-                                    "Diego Oliveira",
-                                ]
-                            ),
-                            tax_id=_random_cpf(),
+                            name=customer_name,
+                            tax_id=_cpf_for_name(customer_name),
                             due=datetime.now(timezone.utc) + timedelta(hours=3),
                             expiration=10800,
                             tags=["starkbank-trial", tag],
@@ -164,7 +190,7 @@ class StarkClient:
                     [
                         starkbank.Transfer(
                             amount=receipt.net_amount,
-                            external_id=f"starkbank-trial:{invoice_id}",
+                            external_id=f"starkbank-trial-{invoice_id}",
                             **DESTINATION,
                         )
                     ]
