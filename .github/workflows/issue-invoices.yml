@@ -1,0 +1,22 @@
+name: Issue invoice batch
+on:
+  schedule:
+    - cron: "0 */3 * * *"
+  workflow_dispatch:
+permissions:
+  id-token: write
+env:
+  AWS_REGION: us-east-2
+  FUNCTION_NAME: stark-bank-worker
+jobs:
+  issue:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ env.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+      - run: aws lambda invoke --function-name "$FUNCTION_NAME" --invocation-type RequestResponse --cli-binary-format raw-in-base64-out --payload "{\"action\":\"issue_batch\",\"idempotency_key\":\"github-run-$GITHUB_RUN_ID\"}" /tmp/response.json
+      - run: cat /tmp/response.json
+
+
