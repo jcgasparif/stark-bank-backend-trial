@@ -29,7 +29,6 @@ O código está organizado em `src/starkbank_trial`:
 | `config.py` | Leitura e validação das configurações e da chave PEM. |
 | `store.py` | Persistência local em SQLite. |
 | `scheduler.py` | Rotina local de emissão periódica. |
-| `setup_webhook.py` | Utilitário para cadastrar um webhook via SDK. |
 
 ### Fluxo local
 
@@ -204,6 +203,12 @@ Verificar a formatação:
 
 ```powershell
 python -m black --check src tests
+```
+
+Verificar a qualidade dos imports e regras estáticas:
+
+```powershell
+python -m ruff check src tests
 ```
 
 Formatar o código:

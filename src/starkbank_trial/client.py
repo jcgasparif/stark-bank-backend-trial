@@ -3,9 +3,9 @@ import hashlib
 import json
 import logging
 import random
-import time, uuid
+import time
+import uuid
 from types import SimpleNamespace
-from typing import Any
 import starkbank
 from starkcore.error import InputErrors, InvalidSignatureError
 from .domain import DESTINATION, receipt_from
@@ -195,6 +195,3 @@ class StarkClient:
                 self.store.mark_retryable(invoice_id, claim["lease_token"])
             finally:
                 raise
-
-    def create_webhook(self, url):
-        return starkbank.webhook.create(url=url, subscriptions=["invoice"])

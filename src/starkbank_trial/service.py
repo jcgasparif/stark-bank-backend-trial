@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
-import uuid, starkbank
+import uuid
+import starkbank
 
 
 def process_webhook(raw: bytes, signature: str, client, store):
