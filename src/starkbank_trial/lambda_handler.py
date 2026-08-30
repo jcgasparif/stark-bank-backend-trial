@@ -1,8 +1,15 @@
-import base64, json, os, time, uuid
+import base64, json, logging, os, time, uuid
 from datetime import datetime, timezone
 import boto3
 import starkbank
 from .client import StarkClient
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+
+def _log(event, **details):
+    logger.info(json.dumps({"event": event, **details}, default=str, sort_keys=True))
 
 
 class DynamoStore:
@@ -136,6 +143,13 @@ def _dependencies():
 def lambda_http_handler(event, context):
     _, store, _ = _dependencies()
     body = event.get("body", "")
+    request_id = getattr(context, "aws_request_id", None)
+    _log(
+        "webhook_received",
+        request_id=request_id,
+        encoded=bool(event.get("isBase64Encoded")),
+        body_size=len(body or ""),
+    )
     try:
         raw = base64.b64decode(body) if event.get("isBase64Encoded") else body.encode()
         headers = {str(k).lower(): v for k, v in event.get("headers", {}).items()}
@@ -143,28 +157,64 @@ def lambda_http_handler(event, context):
         if not signature:
             raise ValueError("Digital-Signature header is required")
         parsed = starkbank.event.parse(content=raw.decode("utf-8"), signature=signature)
-        if getattr(parsed, "subscription", None) != "invoice":
-            return {"statusCode": 200, "body": json.dumps({"result": "ignored"})}
+        event_id = getattr(parsed, "id", None) or str(
+            uuid.uuid5(uuid.NAMESPACE_URL, raw.decode("utf-8"))
+        )
         invoice = getattr(getattr(parsed, "log", None), "invoice", None)
         invoice_id = getattr(invoice, "id", None) or getattr(
             invoice, "invoice_id", None
         )
-        if not invoice_id or getattr(invoice, "status", None) not in {
+        status = getattr(invoice, "status", None)
+        _log(
+            "webhook_validated",
+            request_id=request_id,
+            event_id=event_id,
+            subscription=getattr(parsed, "subscription", None),
+            invoice_id=invoice_id,
+            status=status,
+        )
+        if getattr(parsed, "subscription", None) != "invoice":
+            _log(
+                "webhook_ignored",
+                request_id=request_id,
+                reason="unsupported_subscription",
+            )
+            return {"statusCode": 200, "body": json.dumps({"result": "ignored"})}
+        if not invoice_id or status not in {
             "paid",
             "credited",
         }:
+            _log(
+                "webhook_ignored",
+                request_id=request_id,
+                reason="invoice_not_paid",
+                invoice_id=invoice_id,
+                status=status,
+            )
             return {"statusCode": 200, "body": json.dumps({"result": "ignored"})}
-    except Exception:
+    except Exception as error:
+        logger.exception(
+            json.dumps(
+                {
+                    "event": "webhook_rejected",
+                    "request_id": request_id,
+                    "error_type": type(error).__name__,
+                }
+            )
+        )
         return {
             "statusCode": 400,
             "body": json.dumps({"error": "invalid Stark Bank webhook"}),
         }
     try:
-        event_id = getattr(parsed, "id", None) or str(
-            uuid.uuid5(uuid.NAMESPACE_URL, raw.decode("utf-8"))
-        )
         store.save_event(event_id, invoice_id, datetime.now(timezone.utc).isoformat())
-        boto3.client(
+        _log(
+            "webhook_event_persisted",
+            request_id=request_id,
+            event_id=event_id,
+            invoice_id=invoice_id,
+        )
+        queue_response = boto3.client(
             "sqs", region_name=os.getenv("AWS_REGION", "us-east-2")
         ).send_message(
             QueueUrl=os.environ["INVOICE_QUEUE_URL"],
@@ -176,11 +226,28 @@ def lambda_http_handler(event, context):
                 }
             ),
         )
+        _log(
+            "webhook_queued",
+            request_id=request_id,
+            event_id=event_id,
+            invoice_id=invoice_id,
+            sqs_message_id=queue_response.get("MessageId"),
+        )
         return {
             "statusCode": 200,
             "body": json.dumps({"result": "queued", "invoice_id": invoice_id}),
         }
-    except Exception:
+    except Exception as error:
+        logger.exception(
+            json.dumps(
+                {
+                    "event": "webhook_queue_failed",
+                    "request_id": request_id,
+                    "invoice_id": invoice_id,
+                    "error_type": type(error).__name__,
+                }
+            )
+        )
         return {
             "statusCode": 500,
             "body": json.dumps({"error": "temporary queue failure"}),
@@ -189,11 +256,18 @@ def lambda_http_handler(event, context):
 
 def lambda_worker_handler(event, context):
     _, store, client = _dependencies()
+    request_id = getattr(context, "aws_request_id", None)
+    _log(
+        "worker_started",
+        request_id=request_id,
+        action=event.get("action"),
+        record_count=len(event.get("Records", [])),
+    )
     if event.get("action") == "issue_batch":
         batch_key = event.get("idempotency_key") or str(
             uuid.uuid5(uuid.NAMESPACE_URL, json.dumps(event, sort_keys=True))
         )
-        return {
+        result = {
             "statusCode": 200,
             "body": json.dumps(
                 {
@@ -202,20 +276,46 @@ def lambda_worker_handler(event, context):
                 }
             ),
         }
+        _log(
+            "worker_issue_batch_completed",
+            request_id=request_id,
+            idempotency_key=batch_key,
+            count=json.loads(result["body"])["count"],
+        )
+        return result
     failures = []
     from .service import process_webhook
 
     for record in event.get("Records", []):
+        message_id = record.get("messageId", "")
         try:
             message = json.loads(record["body"])
-            process_webhook(
+            result = process_webhook(
                 base64.b64decode(message["body"]),
                 message.get("signature", ""),
                 client,
                 store,
             )
-        except Exception:
-            failures.append({"itemIdentifier": record.get("messageId", "")})
+            _log(
+                "worker_record_completed",
+                request_id=request_id,
+                message_id=message_id,
+                event_id=message.get("event_id"),
+                result=result,
+            )
+        except Exception as error:
+            logger.exception(
+                json.dumps(
+                    {
+                        "event": "worker_record_failed",
+                        "request_id": request_id,
+                        "message_id": message_id,
+                        "error_type": type(error).__name__,
+                    }
+                )
+            )
+            failures.append({"itemIdentifier": message_id})
+    _log("worker_finished", request_id=request_id, failed_count=len(failures))
     return {"batchItemFailures": failures}
 
 
