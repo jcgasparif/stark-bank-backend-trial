@@ -1,7 +1,5 @@
 name: Issue invoice batch
-on:
-  schedule:
-    - cron: "0 */3 * * *"
+on:  
   workflow_dispatch:
 permissions:
   id-token: write
